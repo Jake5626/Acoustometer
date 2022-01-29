@@ -35,6 +35,7 @@ Widget::Widget(QWidget *parent) :
     connect(ui->Button_import,SIGNAL(clicked()),this,SLOT(export_to_excel()));
     connect(ui->Button_plot,SIGNAL(clicked()),this,SLOT(plot_dialog_show()));
     connect(ui->treeView,SIGNAL(clicked(QModelIndex)),this,SLOT(current_index_changed(QModelIndex)));//当树状列表上的节点被点击后触发，用来限定操作逻辑
+//    connect(model, SIGNAL(QStandardItem::itemChanged(QStandardItem*)), this, SLOT(current_item_changed(QStandardItem*)));
     connect(portAgent,SIGNAL(addTreeNode(QStringList)),this,SLOT(initTree(QStringList)));//当有列表数据收到后触发
     connect(portAgent,SIGNAL(readInstanceData(QStringList)),this,SLOT(update_instance_data(QStringList)));//更新当前的实时数据
     connect(portAgent,SIGNAL(fillTable(QStringList)),this,SLOT(fill_table_all(QStringList)));
@@ -76,6 +77,121 @@ void Widget::connectError()
 {
     QMessageBox::warning(this,language->connectError,language->connectErrorInfo);
     this->portAgent->orderList.clear();
+}
+
+void Widget::current_item_changed(QStandardItem *currentItem){
+//    QModelIndex currentIndex = currentItem->index();
+    QString s = currentItem->text();
+    isInstance = false;
+    if(s == language->deviceList)
+    {
+        ui->Button_import->hide();
+        ui->Button_start->hide();
+        ui->Button_plot->hide();
+        ui->label->setText(language->connectedDevices(devices->rowCount()));
+    }
+    if(s.contains(language->device))
+    {
+        ui->Button_import->hide();
+        ui->Button_start->hide();
+        ui->Button_plot->hide();
+        ui->label->setText(language->selection+s);
+        ui->treeView->expand(ui->treeView->currentIndex());
+    }
+    if(s.contains(language->realTimeData))
+    {
+        ui->label->setText(language->formContent(get_device_id(),0));
+        ui->Button_import->show();
+        ui->Button_start->show();
+        ui->Button_plot->show();
+        ui->tableWidget->clear();
+        initTable();
+        emit getInstanceBuff(QDir::currentPath()+"//instance//"+get_device_id_toString()+".csv");
+
+        isInstance = true;
+        if(s.contains(language->sampling))
+        {
+            ui->Button_start->setText(language->buttonStop);
+            ui->Button_import->setEnabled(false);
+        }
+        else
+        {
+            ui->Button_start->setText(language->buttonStart);
+            ui->Button_import->setEnabled(true);
+        }
+    }
+    if(s == language->historyData)
+    {
+        ui->label->setText(language->formContent(get_device_id(),1));
+        ui->Button_start->hide();
+        ui->Button_import->show();
+        ui->Button_plot->show();
+        ui->Button_import->setEnabled(true);
+        ui->treeView->expand(ui->treeView->currentIndex());
+        ui->tableWidget->clear();
+        initTable();
+        int j = 0;
+        for(int i=0;i<currentItem->rowCount();i++)
+        {
+            QStandardItem *currentItem = get_current_item()->child(i);
+            if(currentItem->checkState()==2){
+                if(isInstanceDataCollecting()){
+                    QMessageBox::warning(this,language->warring,language->warringInfo);
+                    return;
+                }
+                emit orders(get_device_id(),currentItem->text());
+                j++;
+            }
+        }
+        if(j==0)
+        {
+            QStringList s;
+            emit plotData(s,language->device+"-"+get_device_id_toString()+" "+language->historyData);
+        }
+    }
+
+    if(s.contains("-"))
+    {
+        ui->Button_start->hide();
+        ui->Button_import->show();
+        ui->Button_plot->show();
+        if(isInstanceDataCollecting())
+            QMessageBox::warning(this,language->warring,language->warringInfo);
+        else{
+            ui->tableWidget->clear();
+            initTable();
+            if(get_current_item()->checkState()==0)
+            {
+                get_current_item()->setCheckState(Qt::CheckState::Checked);
+                for(int i=0;i<get_current_item()->parent()->rowCount();i++)
+                {
+                    QStandardItem *currentItem = get_current_item()->parent()->child(i);
+                    if(currentItem->checkState()==2){
+                        emit orders(get_device_id(),currentItem->text());
+                    }
+                }
+            }
+            else
+            {
+                get_current_item()->setCheckState(Qt::CheckState::Unchecked);
+                int j = 0;
+                for(int i=0;i<get_current_item()->parent()->rowCount();i++)
+                {
+                    QStandardItem *currentItem = get_current_item()->parent()->child(i);
+                    if(currentItem->checkState()==2){
+                        j++;
+                        emit orders(get_device_id(),currentItem->text());
+                    }
+                }
+                if(j==0)
+                {
+                    QStringList s;
+                    emit plotData(s,language->device+"-"+get_device_id_toString()+" "+language->historyData);
+                }
+            }
+
+        }
+    }
 }
 
 void Widget::current_index_changed(QModelIndex currentIndex)
@@ -160,30 +276,40 @@ void Widget::current_index_changed(QModelIndex currentIndex)
         else{
             ui->tableWidget->clear();
             initTable();
-            if(get_current_item()->checkState()==0)
+            qDebug()<<currentItem->text();
+            qDebug()<<currentItem->checkState();
+//            if(get_current_item()->checkState()==0)
+            if(currentItem->checkState()==0)
             {
-                get_current_item()->setCheckState(Qt::CheckState::Checked);
-                for(int i=0;i<get_current_item()->parent()->rowCount();i++)
+//                QStandardItem *curItem = get_current_item();
+//                qDebug()<<curItem->text();
+                currentItem->setCheckState(Qt::CheckState::Checked);
+                for(int i=0;currentItem->parent() && i<currentItem->parent()->rowCount();i++)
                 {
-                    QStandardItem *currentItem = get_current_item()->parent()->child(i);
-                    if(currentItem->checkState()==2){
-                        emit orders(get_device_id(),currentItem->text());
+//                    QStandardItem *curItem = get_current_item()->parent()->child(i);
+                    QStandardItem *curItem = currentItem->parent()->child(i);
+                    if(curItem->checkState()==2){
+                        emit orders(get_device_id(),curItem->text());
                     }
                 }
             }
             else
             {
-                get_current_item()->setCheckState(Qt::CheckState::Unchecked);
+//                QStandardItem *curItem = get_current_item();
+//                curItem->setCheckState(Qt::CheckState::Unchecked);
+                currentItem->setCheckState(Qt::CheckState::Unchecked);
                 int j = 0;
-                for(int i=0;i<get_current_item()->parent()->rowCount();i++)
+//                for(int i=0;currentItem->parent() && i<get_current_item()->parent()->rowCount();i++)
+                for(int i=0;currentItem->parent() && i<currentItem->parent()->rowCount();i++)
                 {
-                    QStandardItem *currentItem = get_current_item()->parent()->child(i);
-                    if(currentItem->checkState()==2){
+//                    QStandardItem *currentItem = get_current_item()->parent()->child(i);
+                    QStandardItem *curItem = currentItem->parent()->child(i);
+                    if(curItem->checkState()==2){
                         j++;
-                        emit orders(get_device_id(),currentItem->text());
+                        emit orders(get_device_id(),curItem->text());
                     }
                 }
-                if(j==0)
+                if(j==0 && currentItem->parent())
                 {
                     QStringList s;
                     emit plotData(s,language->device+"-"+get_device_id_toString()+" "+language->historyData);

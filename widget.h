@@ -95,6 +95,7 @@ private slots:
      void set_progressBar_value(double i);
      void plot_dialog_show();
      void connectError();
+     void current_item_changed(QStandardItem *currentItem);
      //     void start_stop_all();
      //     void read_history_data(QString s);//读取历史数据
 
